@@ -1,0 +1,11 @@
+# generated / local-only files
+node_modules/
+.dsh/
+tools/preview-out/
+*.log
+*.tmp
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
