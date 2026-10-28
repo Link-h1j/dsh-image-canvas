@@ -1,0 +1,384 @@
+{
+  "model": "selftest",
+  "theme": "dark",
+  "state": {
+    "status": "done",
+    "pass": 64,
+    "fail": 0,
+    "results": [
+      {
+        "name": "createViewer 返回对象",
+        "ok": true
+      },
+      {
+        "name": "返回时 ready === true",
+        "ok": true
+      },
+      {
+        "name": "ready 是 boolean",
+        "ok": true
+      },
+      {
+        "name": "返回时不持有模型 info === null",
+        "ok": true
+      },
+      {
+        "name": "viewer.load 是函数",
+        "ok": true
+      },
+      {
+        "name": "viewer.resize 是函数",
+        "ok": true
+      },
+      {
+        "name": "viewer.frame 是函数",
+        "ok": true
+      },
+      {
+        "name": "viewer.setBackground 是函数",
+        "ok": true
+      },
+      {
+        "name": "viewer.setTheme 是函数",
+        "ok": true
+      },
+      {
+        "name": "viewer.dispose 是函数",
+        "ok": true
+      },
+      {
+        "name": "renderer.toneMapping",
+        "ok": true
+      },
+      {
+        "name": "renderer.outputColorSpace 是 SRGB",
+        "ok": true
+      },
+      {
+        "name": "antialias 生效",
+        "ok": true
+      },
+      {
+        "name": "scene.environment 已设置（PBR 不黑）",
+        "ok": true
+      },
+      {
+        "name": "自适应网格存在",
+        "ok": true
+      },
+      {
+        "name": "OrbitControls damping 开",
+        "ok": true
+      },
+      {
+        "name": "GLB: meshes > 0",
+        "ok": true
+      },
+      {
+        "name": "GLB: triangles > 0",
+        "ok": true
+      },
+      {
+        "name": "GLB: bbox 是 3 个正数",
+        "ok": true
+      },
+      {
+        "name": "GLB: loadMs 是数字",
+        "ok": true
+      },
+      {
+        "name": "GLB: onInfo 被调用",
+        "ok": true
+      },
+      {
+        "name": "GLB: viewer.info === 返回的 info",
+        "ok": true
+      },
+      {
+        "name": "GLB: 脚底贴地 (min.y≈0)",
+        "ok": true
+      },
+      {
+        "name": "GLB: 水平居中 (x/z 对称)",
+        "ok": true
+      },
+      {
+        "name": "FBX: 有网格与三角面",
+        "ok": true
+      },
+      {
+        "name": "FBX: onInfo 第二次被调用",
+        "ok": true
+      },
+      {
+        "name": "OBJ: 6 个三角面",
+        "ok": true
+      },
+      {
+        "name": "OBJ: 兜底 MeshStandardMaterial",
+        "ok": true
+      },
+      {
+        "name": "OBJ: 兜底 metalness=0.05 roughness=0.6",
+        "ok": true
+      },
+      {
+        "name": "STL: 12 个三角面",
+        "ok": true
+      },
+      {
+        "name": "STL: 兜底 MeshStandardMaterial",
+        "ok": true
+      },
+      {
+        "name": "STL: 无 normal 时自动补算法线",
+        "ok": true
+      },
+      {
+        "name": "PLY: 8 个三角面（接受 ArrayBuffer）",
+        "ok": true
+      },
+      {
+        "name": "PLY: 兜底 MeshStandardMaterial",
+        "ok": true
+      },
+      {
+        "name": "省略 ext 时按 name 推断",
+        "ok": true
+      },
+      {
+        "name": "像素: 画面非纯背景 (>2% 非背景像素)",
+        "ok": true
+      },
+      {
+        "name": "阴影已关闭（简单光照，无 shadowMap）",
+        "ok": true
+      },
+      {
+        "name": "旋转中心 = 包围盒中心",
+        "ok": true
+      },
+      {
+        "name": "minDistance < maxDistance",
+        "ok": true
+      },
+      {
+        "name": "省电: 空闲 800ms 内渲染次数不再增加",
+        "ok": true
+      },
+      {
+        "name": "交互(change)后恢复渲染",
+        "ok": true
+      },
+      {
+        "name": "hidden: rAF 被取消，不再自动出帧",
+        "ok": true
+      },
+      {
+        "name": "恢复 visible 后补一帧",
+        "ok": true
+      },
+      {
+        "name": "resize: pixelRatio <= 2",
+        "ok": true
+      },
+      {
+        "name": "resize: 绘制缓冲 = CSS 尺寸 × dpr",
+        "ok": true
+      },
+      {
+        "name": "resize: camera.aspect 跟随",
+        "ok": true
+      },
+      {
+        "name": "setTheme(light): 背景变亮",
+        "ok": true
+      },
+      {
+        "name": "setTheme(light): 曝光跟着换",
+        "ok": true
+      },
+      {
+        "name": "setTheme(dark): 背景变深",
+        "ok": true
+      },
+      {
+        "name": "setBackground(#ff0000): 背景为红色",
+        "ok": true
+      },
+      {
+        "name": "setBackground 后 setTheme 不覆盖显式背景",
+        "ok": true
+      },
+      {
+        "name": "frame(): 相机被拉回",
+        "ok": true
+      },
+      {
+        "name": "frame(): 仍脚底贴地",
+        "ok": true
+      },
+      {
+        "name": "不支持格式 -> 抛“格式不支持”",
+        "ok": true,
+        "detail": "",
+        "message": "格式不支持：无法预览 .xyz 文件，目前只支持 glb / gltf / obj / fbx / stl / ply"
+      },
+      {
+        "name": "损坏 GLB -> 抛“文件损坏”",
+        "ok": true,
+        "detail": "",
+        "message": "文件损坏：broken.glb 无法作为 GLB 解析（Unexpected token '\u0007', \"\u0007\u0007\u0007\u0007\u0007\u0007\u0007\u0007\u0007\u0007\"... is not valid JSON）"
+      },
+      {
+        "name": "空文件 -> 抛错",
+        "ok": true,
+        "detail": "",
+        "message": "文件是空的（0 字节）"
+      },
+      {
+        "name": "bytes 缺失 -> 抛错",
+        "ok": true,
+        "detail": "",
+        "message": "加载失败：没有收到文件内容（bytes 为空）"
+      },
+      {
+        "name": "非 canvas 参数 -> 抛 TypeError",
+        "ok": true,
+        "detail": "",
+        "message": "createViewer(canvas, options)：第一个参数必须是 <canvas> 元素"
+      },
+      {
+        "name": "失败后 onError 被调用过",
+        "ok": true
+      },
+      {
+        "name": "失败后旧模型仍在（load 失败不破坏现状）",
+        "ok": true
+      },
+      {
+        "name": "dispose: ready === false",
+        "ok": true
+      },
+      {
+        "name": "dispose: 场景清空",
+        "ok": true
+      },
+      {
+        "name": "dispose 后再 load -> 抛错",
+        "ok": true,
+        "detail": "",
+        "message": "viewer 已 dispose，不能再 load"
+      },
+      {
+        "name": "dispose 后可在同一 canvas 上重建",
+        "ok": true
+      }
+    ],
+    "createMs": 564,
+    "infoCalls": [
+      {
+        "meshes": 15,
+        "triangles": 32545,
+        "bbox": [
+          0.7072,
+          1.6489,
+          0.8012
+        ],
+        "loadMs": 10,
+        "name": "whale_maid_joined.glb",
+        "ext": "glb"
+      },
+      {
+        "meshes": 1,
+        "triangles": 17156,
+        "bbox": [
+          0.5879,
+          0.998,
+          0.584
+        ],
+        "loadMs": 58,
+        "name": "knight_lowpoly.fbx",
+        "ext": "fbx"
+      },
+      {
+        "meshes": 1,
+        "triangles": 6,
+        "bbox": [
+          2.4,
+          2,
+          2.4
+        ],
+        "loadMs": 3,
+        "name": "cube.obj",
+        "ext": "obj"
+      },
+      {
+        "meshes": 1,
+        "triangles": 12,
+        "bbox": [
+          2,
+          2,
+          2
+        ],
+        "loadMs": 2,
+        "name": "cube.stl",
+        "ext": "stl"
+      },
+      {
+        "meshes": 1,
+        "triangles": 8,
+        "bbox": [
+          2.8,
+          2.8,
+          2.8
+        ],
+        "loadMs": 3,
+        "name": "cube.ply",
+        "ext": "ply"
+      },
+      {
+        "meshes": 15,
+        "triangles": 32545,
+        "bbox": [
+          0.7072,
+          1.6489,
+          0.8012
+        ],
+        "loadMs": 2,
+        "name": "whale_maid_joined.glb",
+        "ext": "glb"
+      },
+      {
+        "meshes": 15,
+        "triangles": 32545,
+        "bbox": [
+          0.7072,
+          1.6489,
+          0.8012
+        ],
+        "loadMs": 2,
+        "name": "whale.glb",
+        "ext": "glb"
+      }
+    ],
+    "errCalls": [
+      "格式不支持：无法预览 .xyz 文件，目前只支持 glb / gltf / obj / fbx / stl / ply",
+      "文件损坏：broken.glb 无法作为 GLB 解析（Unexpected token '\u0007', \"\u0007\u0007\u0007\u0007\u0007\u0007\u0007\u0007\u0007\u0007\"... is not valid JSON）",
+      "加载失败：没有收到文件内容（bytes 为空）"
+    ],
+    "pixels": {
+      "w": 1258,
+      "h": 762,
+      "meanLum": 236.71,
+      "nonBgPct": 7.68
+    }
+  },
+  "probe": null,
+  "pixels": null,
+  "console": [
+    "warning: THREE.FBXLoader: %s map is not supported in three.js, skipping texture. ShininessExponent",
+    "warning: THREE.FBXLoader: %s map is not supported in three.js, skipping texture. ReflectionFactor"
+  ],
+  "shot": "C:\\Users\\Administrator\\Documents\\deepseek-harness\\默认工作区\\dsh-image-canvas\\vendor\\_verify\\selftest.png"
+}

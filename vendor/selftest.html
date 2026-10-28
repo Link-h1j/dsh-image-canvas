@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>viewer.js 契约自测</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #wrap { position: fixed; inset: 0; }
+  canvas#c { display: block; width: 100%; height: 100%; }
+  #hud {
+    position: fixed; left: 8px; top: 8px; z-index: 9; max-height: 96vh; overflow: auto;
+    font: 11px/1.45 ui-monospace, Consolas, monospace; color: #d6e4ff;
+    background: rgba(4,8,14,.86); padding: 8px 10px; border-radius: 6px;
+    white-space: pre; max-width: 48vw; pointer-events: none;
+  }
+  .ok { color: #6ef08a; } .bad { color: #ff6b6b; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<div id="hud">running…</div>
+
+<script type="module">
+import { createViewer } from '/viewer.js';
+import * as THREE from '/three.module.js';
+
+const hud = document.getElementById('hud');
+const results = [];
+const state = { status: 'running' };
+window.__SELFTEST__ = state;
+
+function check(name, fn) {
+  try {
+    const r = fn();
+    if (r === true || r === undefined) results.push({ name, ok: true });
+    else results.push({ name, ok: false, detail: 'expected true, got ' + JSON.stringify(r) });
+  } catch (e) {
+    results.push({ name, ok: false, detail: 'threw: ' + (e && e.message || e) });
+  }
+}
+async function checkAsync(name, fn) {
+  try {
+    const r = await fn();
+    if (r === true || r === undefined) results.push({ name, ok: true });
+    else results.push({ name, ok: false, detail: 'expected true, got ' + JSON.stringify(r) });
+  } catch (e) {
+    results.push({ name, ok: false, detail: 'threw: ' + (e && e.message || e) });
+  }
+}
+async function expectThrow(name, fn, pattern) {
+  try {
+    await fn();
+    results.push({ name, ok: false, detail: '没有抛错' });
+  } catch (e) {
+    const msg = String(e && e.message || e);
+    const hit = !pattern || pattern.test(msg);
+    results.push({ name, ok: hit, detail: hit ? '' : '文案不匹配: ' + msg, message: msg });
+  }
+}
+async function bytesOf(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + url);
+  return new Uint8Array(await r.arrayBuffer());
+}
+const render = () => hud.innerHTML = results.length + ' checks\n' + results
+  .map((r) => (r.ok ? '<span class=ok>PASS</span> ' : '<span class=bad>FAIL</span> ') + r.name +
+    (r.ok ? '' : '\n      ' + (r.detail || '')))
+  .join('\n');
+
+/** render + readPixels 同一任务内完成，绕过 preserveDrawingBuffer:false */
+window.__samplePixels = function () {
+  const v = window.__viewer;
+  v.render();
+  const gl = v.renderer.getContext();
+  const w = gl.drawingBufferWidth;
+  const h = gl.drawingBufferHeight;
+  const px = new Uint8Array(w * h * 4);
+  gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  const bgc = (v.scene.background && v.scene.background.isColor) ? v.scene.background.getHex() : null;
+  const bR = bgc != null ? (bgc >> 16) & 255 : null;
+  const bG = bgc != null ? (bgc >> 8) & 255 : null;
+  const bB = bgc != null ? bgc & 255 : null;
+  let n = 0, sum = 0, nonBg = 0;
+  for (let i = 0; i < px.length; i += 4) {
+    const r = px[i], g = px[i + 1], b = px[i + 2];
+    n++; sum += 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    if (!(bR != null && Math.abs(r - bR) <= 6 && Math.abs(g - bG) <= 6 && Math.abs(b - bB) <= 6)) nonBg++;
+  }
+  return { w, h, meanLum: +(sum / n).toFixed(2), nonBgPct: +((nonBg / n) * 100).toFixed(2) };
+};
+
+const infoCalls = [];
+const errCalls = [];
+
+try {
+  const canvas = document.getElementById('c');
+
+  /* ---------- 1. createViewer 契约 ---------- */
+  const tCreate = performance.now();
+  const viewer = await createViewer(canvas, {
+    onInfo: (i) => infoCalls.push(i),
+    onError: (e) => errCalls.push(String(e && e.message || e)),
+  });
+  const createMs = performance.now() - tCreate;
+  window.__viewer = viewer;
+
+  check('createViewer 返回对象', () => viewer && typeof viewer === 'object');
+  check('返回时 ready === true', () => viewer.ready === true);
+  check('ready 是 boolean', () => typeof viewer.ready === 'boolean');
+  check('返回时不持有模型 info === null', () => viewer.info === null);
+  for (const m of ['load', 'resize', 'frame', 'setBackground', 'setTheme', 'dispose']) {
+    check('viewer.' + m + ' 是函数', () => typeof viewer[m] === 'function');
+  }
+  check('renderer.toneMapping', () => viewer.renderer.toneMapping === THREE.ACESFilmicToneMapping);
+  check('renderer.outputColorSpace 是 SRGB', () => viewer.renderer.outputColorSpace === THREE.SRGBColorSpace);
+  check('antialias 生效', () => viewer.renderer.getContext().getContextAttributes().antialias === true);
+  check('scene.environment 已设置（PBR 不黑）', () => !!viewer.scene.environment);
+  check('自适应网格存在', () => !!viewer.scene.getObjectByName('dsh-canvas-grid'));
+  check('OrbitControls damping 开', () => viewer.controls.enableDamping === true);
+
+  /* ---------- 2. GLB ---------- */
+  const whaleBytes = await bytesOf('/whale.glb');
+  const info1 = await viewer.load({ bytes: whaleBytes, name: 'whale_maid_joined.glb', ext: 'glb' });
+  check('GLB: meshes > 0', () => info1.meshes > 0);
+  check('GLB: triangles > 0', () => info1.triangles > 0);
+  check('GLB: bbox 是 3 个正数', () => Array.isArray(info1.bbox) && info1.bbox.length === 3 && info1.bbox.every((v) => v > 0));
+  check('GLB: loadMs 是数字', () => typeof info1.loadMs === 'number');
+  check('GLB: onInfo 被调用', () => infoCalls.length === 1);
+  check('GLB: viewer.info === 返回的 info', () => viewer.info === info1);
+
+  const box1 = new THREE.Box3().setFromObject(viewer.scene.getObjectByName('dsh-canvas-model'));
+  check('GLB: 脚底贴地 (min.y≈0)', () => Math.abs(box1.min.y) < 0.01);
+  check('GLB: 水平居中 (x/z 对称)', () => Math.abs(box1.min.x + box1.max.x) < 0.02 && Math.abs(box1.min.z + box1.max.z) < 0.02);
+
+  /* ---------- 3. FBX ---------- */
+  const fbxBytes = await bytesOf('/knight.fbx');
+  const info2 = await viewer.load({ bytes: fbxBytes, name: 'knight_lowpoly.fbx', ext: 'fbx' });
+  check('FBX: 有网格与三角面', () => info2.meshes > 0 && info2.triangles > 0);
+  check('FBX: onInfo 第二次被调用', () => infoCalls.length === 2);
+
+  /* ---------- 4. OBJ（无 MTL -> 兜底材质） ---------- */
+  const objBytes = await bytesOf('/cube.obj');
+  const info3 = await viewer.load({ bytes: objBytes, name: 'cube.obj', ext: 'obj' });
+  check('OBJ: 6 个三角面', () => info3.triangles === 6);
+  const objMesh = viewer.scene.getObjectByName('dsh-canvas-model').getObjectByProperty('isMesh', true);
+  check('OBJ: 兜底 MeshStandardMaterial', () => !!objMesh && objMesh.material && objMesh.material.isMeshStandardMaterial === true);
+  check('OBJ: 兜底 metalness=0.05 roughness=0.6', () => objMesh.material.metalness === 0.05 && objMesh.material.roughness === 0.6);
+
+  /* ---------- 5. STL ---------- */
+  const stlBytes = await bytesOf('/cube.stl');
+  const info4 = await viewer.load({ bytes: stlBytes, name: 'cube.stl', ext: 'stl' });
+  check('STL: 12 个三角面', () => info4.triangles === 12);
+  const stlMesh = viewer.scene.getObjectByName('dsh-canvas-model').getObjectByProperty('isMesh', true);
+  check('STL: 兜底 MeshStandardMaterial', () => !!stlMesh && stlMesh.material.isMeshStandardMaterial === true);
+  check('STL: 无 normal 时自动补算法线', () => !!stlMesh.geometry.attributes.normal);
+
+  /* ---------- 6. PLY（ArrayBuffer 形式传入） ---------- */
+  const plyBytes = await bytesOf('/cube.ply');
+  const info5 = await viewer.load({ bytes: plyBytes.buffer, name: 'cube.ply', ext: 'ply' });
+  check('PLY: 8 个三角面（接受 ArrayBuffer）', () => info5.triangles === 8);
+  const plyMesh = viewer.scene.getObjectByName('dsh-canvas-model').getObjectByProperty('isMesh', true);
+  check('PLY: 兜底 MeshStandardMaterial', () => !!plyMesh && plyMesh.material.isMeshStandardMaterial === true);
+
+  /* ---------- 7. 扩展名省略时从 name 推断 ---------- */
+  await viewer.load({ bytes: whaleBytes, name: 'whale_maid_joined.glb' });
+  check('省略 ext 时按 name 推断', () => viewer.info.ext === 'glb');
+
+  /* ---------- 8. 像素：模型真的画上去了 ---------- */
+  await viewer.load({ bytes: whaleBytes, name: 'whale.glb', ext: 'glb' });
+  viewer.frame();
+  await new Promise((r) => setTimeout(r, 300));
+  const px = window.__samplePixels();
+  check('像素: 画面非纯背景 (>2% 非背景像素)', () => px.nonBgPct > 2);
+
+  /* ---------- 8b. 省电：交互/阻尼收敛后必须停渲染 ---------- */
+  check('阴影已关闭（简单光照，无 shadowMap）', () => viewer.renderer.shadowMap.enabled === false);
+  check('旋转中心 = 包围盒中心', () => Math.abs(viewer.controls.target.y - viewer.info.bbox[1] / 2) < 0.01);
+  check('minDistance < maxDistance', () => viewer.controls.minDistance < viewer.controls.maxDistance);
+
+  let renderCount = 0;
+  const origRender = viewer.renderer.render.bind(viewer.renderer);
+  viewer.renderer.render = function (...a) { renderCount++; return origRender(...a); };
+  viewer.render();
+  await new Promise((r) => setTimeout(r, 120));
+  const c1 = renderCount;
+  await new Promise((r) => setTimeout(r, 800));
+  const c2 = renderCount;
+  check('省电: 空闲 800ms 内渲染次数不再增加', () => c2 === c1);
+  viewer.controls.dispatchEvent({ type: 'change' });
+  await new Promise((r) => setTimeout(r, 250));
+  const c3 = renderCount;
+  check('交互(change)后恢复渲染', () => c3 > c2);
+
+  /* ---------- 8c. 页面不可见时必须暂停渲染 ---------- */
+  const realVis = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState');
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+  document.dispatchEvent(new Event('visibilitychange'));
+  await new Promise((r) => setTimeout(r, 120));
+  const h1 = renderCount;
+  viewer.controls.dispatchEvent({ type: 'change' });   // 想渲染也要被挡住
+  viewer.render();                                     // 显式调用不算，减掉这一次
+  const h1b = renderCount;
+  await new Promise((r) => setTimeout(r, 600));
+  const h2 = renderCount;
+  check('hidden: rAF 被取消，不再自动出帧', () => h2 === h1b && h1b - h1 <= 1);
+
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' });
+  document.dispatchEvent(new Event('visibilitychange'));
+  await new Promise((r) => setTimeout(r, 250));
+  const h3 = renderCount;
+  check('恢复 visible 后补一帧', () => h3 > h2);
+  if (realVis) Object.defineProperty(document, 'visibilityState', realVis);
+  else delete document.visibilityState;
+  document.dispatchEvent(new Event('visibilitychange'));
+
+  /* ---------- 9. resize + dpr clamp ---------- */
+  viewer.resize();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  check('resize: pixelRatio <= 2', () => viewer.renderer.getPixelRatio() <= 2);
+  check('resize: 绘制缓冲 = CSS 尺寸 × dpr', () => {
+    const el = viewer.renderer.domElement;
+    return Math.abs(el.width - Math.round(el.clientWidth * dpr)) <= 2 &&
+           Math.abs(el.height - Math.round(el.clientHeight * dpr)) <= 2;
+  });
+  check('resize: camera.aspect 跟随', () => Math.abs(viewer.camera.aspect - canvas.clientWidth / canvas.clientHeight) < 0.01);
+
+  /* ---------- 10. setTheme / setBackground ---------- */
+  const bgBefore = viewer.scene.background.getHex();
+  viewer.setTheme('light');
+  check('setTheme(light): 背景变亮', () => viewer.scene.background.getHex() !== bgBefore && viewer.scene.background.getHex() > 0x888888);
+  check('setTheme(light): 曝光跟着换', () => viewer.renderer.toneMappingExposure === 1.0);
+  viewer.setTheme('dark');
+  check('setTheme(dark): 背景变深', () => viewer.scene.background.getHex() < 0x333333);
+
+  viewer.setBackground('#ff0000');
+  check('setBackground(#ff0000): 背景为红色', () => viewer.scene.background.getHex() === 0xff0000);
+  viewer.setTheme('light');
+  check('setBackground 后 setTheme 不覆盖显式背景', () => viewer.scene.background.getHex() === 0xff0000);
+  viewer.setBackground(null);
+  viewer.setTheme('dark');
+
+  /* ---------- 11. frame() ---------- */
+  const camBefore = viewer.camera.position.clone();
+  viewer.camera.position.set(999, 999, 999);
+  viewer.frame();
+  check('frame(): 相机被拉回', () => viewer.camera.position.distanceTo(new THREE.Vector3(999, 999, 999)) > 100);
+  const boxAfterFrame = new THREE.Box3().setFromObject(viewer.scene.getObjectByName('dsh-canvas-model'));
+  check('frame(): 仍脚底贴地', () => Math.abs(boxAfterFrame.min.y) < 0.01);
+
+  /* ---------- 12. 错误路径 ---------- */
+  await expectThrow('不支持格式 -> 抛“格式不支持”', () => viewer.load({ bytes: new Uint8Array([1, 2, 3]), name: 'a.xyz', ext: 'xyz' }), /格式不支持/);
+  await expectThrow('损坏 GLB -> 抛“文件损坏”', () => viewer.load({ bytes: new Uint8Array(512).fill(7), name: 'broken.glb', ext: 'glb' }), /文件损坏/);
+  await expectThrow('空文件 -> 抛错', () => viewer.load({ bytes: new Uint8Array(0), name: 'empty.glb', ext: 'glb' }), /损坏|空/);
+  await expectThrow('bytes 缺失 -> 抛错', () => viewer.load({ name: 'x.glb', ext: 'glb' }), /没有收到|bytes/);
+  await expectThrow('非 canvas 参数 -> 抛 TypeError', () => createViewer({}, {}), /canvas/i);
+  check('失败后 onError 被调用过', () => errCalls.length >= 3);
+  check('失败后旧模型仍在（load 失败不破坏现状）', () => !!viewer.scene.getObjectByName('dsh-canvas-model').children.length);
+
+  /* ---------- 13. dispose ---------- */
+  viewer.dispose();
+  check('dispose: ready === false', () => viewer.ready === false);
+  check('dispose: 场景清空', () => viewer.scene.children.length === 0);
+  await expectThrow('dispose 后再 load -> 抛错', () => viewer.load({ bytes: whaleBytes, name: 'w.glb', ext: 'glb' }), /dispose/);
+
+  /* ---------- 14. 二次创建（dispose 后能重建） ---------- */
+  const v2 = await createViewer(canvas, {});
+  window.__viewer = v2;
+  const i6 = await v2.load({ bytes: whaleBytes, name: 'whale.glb', ext: 'glb' });
+  check('dispose 后可在同一 canvas 上重建', () => i6.triangles > 0 && v2.ready === true);
+  v2.frame();
+  v2.setTheme('light');
+  await new Promise((r) => setTimeout(r, 300));
+
+  state.status = 'done';
+  state.pass = results.filter((r) => r.ok).length;
+  state.fail = results.filter((r) => !r.ok).length;
+  state.results = results;
+  state.createMs = Math.round(createMs);
+  state.infoCalls = infoCalls;
+  state.errCalls = errCalls;
+  state.pixels = window.__samplePixels();
+} catch (e) {
+  state.status = 'fatal';
+  state.error = String(e && e.stack || e);
+  state.pass = results.filter((r) => r.ok).length;
+  state.fail = results.filter((r) => !r.ok).length;
+  state.results = results;
+}
+render();
+hud.insertAdjacentHTML('afterbegin', (state.status === 'done' && state.fail === 0 ? '<span class=ok>SELFTEST ALL PASS</span>' : '<span class=bad>SELFTEST FAIL</span>') + '\n');
+</script>
+</body>
+</html>

@@ -140,3 +140,93 @@
 地址是 `dsh-resource://file/...` 就按资源节点存；其它（`data:` / `blob:` / `http`）存成节点的 `url`。
 插完广播 `dsh-image-canvas:reload`，已打开的画布页会自己重读文档；面板内部右键仍然是面板自己的菜单。
 实现挂在 `document` 上（capture），**HMR 安全**：每次 `apply` 先撤旧的再挂新的，不会叠出多份菜单。
+
+## 0.5.0 — 2026-10-21
+
+用户问「无限画布加载图片怎么还会失败？不是所有 PNG 都能加载吗？其他图片格式能不能加？」——
+查下来是**路径/大小/解码器**三件事，不是 PNG 格式本身；三件都修了，并加了更多格式：
+
+**① 路径自愈（这次失败的真实原因）**
+聊天里写 `![x](B:\ComfyUI\_cloud_test\x.png)` 时，Markdown 会把 `\_` 当转义字符，分隔符被吃掉 →
+地址变成 `B:/ComfyUI_cloud_test/x.png`（文件明明在却 `not-found`）。现在读失败（且原因确实是"文件不存在"）时，
+会按 ASCII 标点位置逐个补回 `/` 探测（最多 32 个候选，只读 1 字节），命中就显示图片并**把画布文档里的坏地址改对**
+（提示「图片路径已自动修复：…」）。
+
+**② 大图分块读**
+官方 `workspaceFiles.readBytes` 整文件上限 32 MiB（`workspace-file/too-large`）。现在自动退化成 1 MiB
+`range` 窗口分块读再拼回 `Uint8Array`，单张图封顶 256 MiB；宿主 `/convert` 的 body 上限 300 MiB。
+
+**③ 非浏览器格式：宿主 sharp 转 PNG**
+新增宿主路由 `POST /plugins/dsh-image-canvas/convert`（body = 原图字节，返回 `image/png`），用 sharp/libvips
+解码，EXIF 方向自动摆正、多页取第一页、CMYK 转 sRGB、保留 alpha。画布认领 **tif/tiff**：
+实测通过 未压缩 / LZW / Deflate / PackBits / JPEG-in-TIFF / CMYK / RGBA / 多页 TIFF。
+另加 `jfif/jpe` 别名；**格式按文件头魔术字节判断**，改过后缀的图也能认。
+
+**④ 明确的失败原因**
+节点里不再只写"读取失败"，而是显示具体原因（文件不存在 / 文件太大 / 转码器没装 / 这个格式解不了），
+并提供「重试」与「复制地址」两个按钮；label 的 title 里有完整资源地址。
+
+**⑤ 已知不支持（不是 bug）**
+HEIC/HEIF 是 HEVC 压缩，DSH 自带 libvips 没编 HEVC 解码器（实测 `HEVC ... not been built in`），
+直接给出人话提示而不是白转一趟；`psd/exr/hdr/dds/tga/jxl` 同样没有 loader。
+
+**自检**
+新增 `tools/selftest-helpers.mjs`（47 项纯函数断言，~0.3 s，不依赖 jsdom），
+`tools/selftest-host.mjs` 扩到 19 项（含 `/convert` 405/400/415），`npm run verify` 串起四套检查。
+
+## 0.6.0 — 2026-10-28
+
+无限画布开始**直接看 3D 模型**（用户需求：Tripo / Blender 产出的 glb、fbx 要能在画布上转着看，
+而不是只显示一张缩略图）。
+
+**① 3D 节点：画布上真的有 WebGL 视口**
+认 `.glb / .gltf / .fbx / .obj / .stl / .ply`。节点里是一块 three.js 的 canvas（不是图片）：
+拖进画布后自动按包围盒居中、脚底落到地面网格、相机适配距离；**选中节点后可左键旋转 / 右键平移 /
+滚轮缩放**（未选中时不吃指针事件，画布的拖动、拉框多选照常穿过它）。
+画布缩放时会按比例提高像素比，放大后不发糊；深/浅主题各自换背景色与环境。
+
+**② 三种入口**
+- 对话里点开一个 3D 文件 → 走新注册的资源 tab 类型（`model-3d`）→ 自动收进当前画布；
+- 右下角新增立方体按钮 → 「3D 模型」浮层：扫描目录（默认会话工作目录，可填绝对路径）列出可看的模型，
+  或直接粘路径；
+- 「⋯ → 打开 3D 模型…」同一入口。
+
+**③ 运行时怎么装**
+three.js r169 + 各格式 loader 放在插件自带的 `vendor/`，由宿主 prefix 路由
+`/plugins/dsh-image-canvas/vendor/` 原样发出（`text/javascript` + 1 小时强缓存）。
+**不内联进 client.js**：内联会把 160 KB 的客户端包吹到 1.5 MB，每次 HMR 都要重解析。
+宿主还没重启（路由 404）时自动回退：从工作区目录读 vendor 文本 → 拼成一棵 **blob 模块树**再 `import()`，
+所以改完客户端就能用，不必等重启。
+
+**④ 边界**
+- `.blend` 不收（Blender 私有格式，浏览器没解码器）——先用 Blender 导出 glb；
+- `.gltf` 只支持自包含（外部 `.bin`/贴图拉不到，除非同目录且能走工作区读取；
+  想稳就用 `.glb`）；
+- 单模型 96 MiB 上限，超过给「先减面/压缩」的人话提示；
+- 每个模型一个 WebGL 上下文：画布上一次性放很多模型会吃显存，节点隐藏即释放。
+
+**自检**
+`selftest.mjs` 206 项（新增 3D 类型注册 / canOpen 分流 / 6 个工具按钮），
+`selftest-host.mjs` 23 项（新增 vendor 路由：发得出 viewer.js、拒绝 `..` 穿越、非白名单扩展名 403、缺文件 404）。
+
+**真机联调抓到的 4 个 bug（都是"看不见"那种）**
+① `ensureStyle()` 只按 `id` 判断"已注入就跳过" → HMR 热更后新加的 `.icv-3d` CSS 根本没进页面，
+   3D 节点渲染成一块纯白（节点、label 都在，就是什么都看不见）。改成**按内容比对**，不一致就换掉。
+② blob 回退的依赖改写只认 `from './x.js'` / `import('./x.js')`，漏了 viewer.js 里
+   `getModule('./FBXLoader.js')` 这种**把路径当字符串参数**的写法 → 一加载就报
+   「文件损坏：…Failed to resolve module specifier './FBXLoader.js'」。改成匹配任意位置的
+   `'./x.js'` 字面量。
+③ 自动打开画布：`layout.openRightbar` 在原型上，调用不报错但界面不动；真正生效的是
+   `layout.panels.openRightbar`。而 `sidebarRight.openTab(kind)` 在没有会话上下文时是空操作，
+   `openTabIn(sessionId, kind)` 才可靠。
+④ 桌面版 URL 是 `dsh-app://app/`，不带会话 id —— 自动打开时只能先用 `openTab`，别指望 URL。
+
+**画布里已有 3D 节点时，右侧栏会自动弹出一次**（每个会话一次；`AUTO_OPEN_STAMP` 换值等于重置）。
+起因是用户一句"你这个是两张图片啊" —— 他以为 3D 只能靠 Agent 贴静态截图，因为画布从没被打开过。
+
+**⑤ 3D 视口上右键会误弹画布菜单**（2026-10-28 用户两轮反馈定稿）
+选中 3D 节点后右键本来是平移视角（OrbitControls 的 pan），但 `contextmenu` 冒泡到画布根节点，
+把「复制/粘贴/删除」菜单弹了出来。第一版按"这次拖没拖过"区分（拖过才拦），用户反馈
+**单击也不要弹** —— 定稿口径：**鼠标在 3D 视口上，右键一律不出画布菜单**（拖动=平移视角，
+单击=什么都不弹），未选中的 3D 节点外层也拦一道。节点操作改走「选中后的节点工具条 / Delete 键」。
+`selftest.mjs` 三条回归断言（拖动不弹 / 单击不弹 / 图片节点右键没被误伤），共 216 项。

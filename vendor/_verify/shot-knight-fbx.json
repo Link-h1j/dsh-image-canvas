@@ -1,0 +1,103 @@
+{
+  "model": "knight",
+  "theme": "dark",
+  "state": {
+    "status": "ready-for-shot",
+    "model": "knight",
+    "info": {
+      "meshes": 1,
+      "triangles": 17156,
+      "bbox": [
+        0.5879,
+        0.998,
+        0.584
+      ],
+      "loadMs": 54,
+      "name": "knight_lowpoly.fbx",
+      "ext": "fbx"
+    },
+    "wallMs": 98,
+    "ready": true
+  },
+  "probe": {
+    "ready": true,
+    "info": {
+      "meshes": 1,
+      "triangles": 17156,
+      "bbox": [
+        0.5879,
+        0.998,
+        0.584
+      ],
+      "loadMs": 54,
+      "name": "knight_lowpoly.fbx",
+      "ext": "fbx"
+    },
+    "worldBox": {
+      "min": [
+        -0.2939,
+        0,
+        -0.292
+      ],
+      "max": [
+        0.2939,
+        0.998,
+        0.292
+      ],
+      "size": [
+        0.5879,
+        0.998,
+        0.584
+      ]
+    },
+    "feetOnGround": true,
+    "centeredXZ": true,
+    "camPos": [
+      1.106,
+      1.144,
+      1.536
+    ],
+    "target": [
+      0,
+      0.499,
+      0
+    ],
+    "near": 0.0009999821752393508,
+    "far": 79.99857401914807,
+    "fov": 45,
+    "aspect": 1.651,
+    "pxRatio": 1,
+    "bufferSize": [
+      1258,
+      762
+    ],
+    "cssSize": [
+      1258,
+      762
+    ],
+    "env": true,
+    "envIntensity": 1,
+    "grid": true,
+    "exposure": 1.14,
+    "triCheck": 17156
+  },
+  "pixels": {
+    "w": 1258,
+    "h": 762,
+    "meanLum": 26.55,
+    "darkPct": 0.46,
+    "brightPct": 0,
+    "nonBgPct": 10.64,
+    "subjectBox": {
+      "x": 0,
+      "yFromTop": 143,
+      "w": 1258,
+      "h": 619
+    }
+  },
+  "console": [
+    "warning: THREE.FBXLoader: %s map is not supported in three.js, skipping texture. ShininessExponent",
+    "warning: THREE.FBXLoader: %s map is not supported in three.js, skipping texture. ReflectionFactor"
+  ],
+  "shot": "C:\\Users\\Administrator\\Documents\\deepseek-harness\\默认工作区\\dsh-image-canvas\\vendor\\_verify\\shot-knight-fbx.png"
+}

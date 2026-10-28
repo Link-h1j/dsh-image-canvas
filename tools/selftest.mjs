@@ -171,9 +171,10 @@ const ctx = {
 }
 plugin.apply(ctx)
 
-check('注册了 2 个 tab 类型', registeredTypes.length === 2, '实际 ' + String(registeredTypes.length))
+check('注册了 3 个 tab 类型（画布页 / 图片 / 3D 模型）', registeredTypes.length === 3, '实际 ' + String(registeredTypes.length))
 const pageType = registeredTypes.find((t) => t.kind === 'canvas')
 const imageType = registeredTypes.find((t) => t.kind === 'image-canvas')
+const modelType = registeredTypes.find((t) => t.kind === 'model-3d')
 check('页类型 canvas 存在且不给 patterns', pageType !== undefined && pageType.patterns === undefined)
 check('页类型有引导入口（guide）', pageType !== undefined && Array.isArray(pageType.guide) && pageType.guide.length === 1)
 check('图片类型认领 dsh-resource://file/**', imageType !== undefined && Array.isArray(imageType.patterns) && imageType.patterns[0] === 'dsh-resource://file/**')
@@ -181,8 +182,17 @@ check('canOpen 接受 session scope 的 png', imageType.canOpen('dsh-resource://
 check('canOpen 接受 jpg 与 svg', imageType.canOpen('dsh-resource://file/session/s1/b.JPG') === true && imageType.canOpen('dsh-resource://file/session/s1/c.svg') === true)
 check('canOpen 拒绝文本文件', imageType.canOpen('dsh-resource://file/session/s1/notes.md') === false)
 check('canOpen 拒绝 absolute scope（没有 session 读不了字节）', imageType.canOpen('dsh-resource://file/absolute/C:/x/a.png') === false)
-check('注册了 2 个正文，key 用类型 id', registeredBodies.length === 2
-  && registeredBodies.some((b) => b.options.key === pageType.id) && registeredBodies.some((b) => b.options.key === imageType.id))
+// 3D 类型（2026-10-28）：和图片共用同一条 pattern，靠 canOpen 分流
+check('3D 类型认领同一个 dsh-resource://file/** 并且存在', modelType !== undefined && Array.isArray(modelType.patterns) && modelType.patterns[0] === 'dsh-resource://file/**')
+check('3D 的 canOpen 接受 glb/GLB/fbx/obj/stl/ply/gltf',
+  ['a.glb', 'b.GLB', 'c.fbx', 'd.obj', 'e.stl', 'f.ply', 'g.gltf'].every((name) => modelType.canOpen('dsh-resource://file/session/s1/' + name) === true))
+check('3D 的 canOpen 拒绝图片与文本', modelType.canOpen('dsh-resource://file/session/s1/a.png') === false
+  && modelType.canOpen('dsh-resource://file/session/s1/a.txt') === false)
+check('图片类型不抢 3D 文件', imageType.canOpen('dsh-resource://file/session/s1/a.glb') === false)
+check('注册了 3 个正文，key 用类型 id', registeredBodies.length === 3
+  && registeredBodies.some((b) => b.options.key === pageType.id)
+  && registeredBodies.some((b) => b.options.key === imageType.id)
+  && registeredBodies.some((b) => b.options.key === modelType.id))
 check('正文都挂在 sidebar.right.pane.tab 席位', registeredBodies.every((b) => b.options.name === 'sidebar.right.pane.tab'))
 check('正文通过 inject 工厂拿到 sessionId 与 loadImage', typeof registeredBodies[0].options.inject === 'function')
 
@@ -261,7 +271,7 @@ await tick()
 check('没有常驻顶部工具条', $('.icv-bar') === null)
 check('没有常驻面板（画布全屏留白）', $('.icv-panel') === null && $('.icv-sheet') === null)
 const toolButtons = $$('.icv-tools [data-icv-tool]')
-check('右下角工具组是 5 个按钮（生成 + 指针组 + 批注组 + 适应 + 更多）', toolButtons.length === 5, String(toolButtons.length))
+check('右下角工具组是 6 个按钮（生成 + 指针组 + 批注组 + 3D + 适应 + 更多）', toolButtons.length === 6, String(toolButtons.length))
 check('工具按钮是纯图标（没有文字，靠 title 提示）', toolButtons.every((b) => (b.textContent ?? '') === '' && (b.getAttribute('title') ?? '') !== ''))
 check('指针组默认显示「选择」，批注组此时没有生效成员（标题里带三个成员名）',
   ($('[data-icv-tool="group-pointer"]')?.getAttribute('title') ?? '').includes('当前：选择')
@@ -965,6 +975,58 @@ console.log('== 11. 面板外右键图片 →「放入无限画布」（2026-10-
   await tick()
   check('画布面板内部右键：不弹外部菜单（仍用面板自己的）', extMenu() === null && $('.icv-ctx') !== null)
   chatImg.remove()
+}
+
+// ─────────────────────────────────────────── 3D 模型节点（2026-10-28）
+// jsdom 里没有 WebGL，所以这里只验"接线"：3D 节点不走去读图片字节，而是渲染成 .icv-3d 容器，
+// 节点 label 不会误报"（读取失败）"，且画布文档里 kind=model 能被完整读回。
+{
+  hostDoc = {
+    v: 1, seq: 1, view: { x: 0, y: 0, k: 1 },
+    annotations: [],
+    nodes: [
+      { id: 'm1', kind: 'model', address: 'dsh-resource://file/session/session-1/tripo-out/a.glb', name: 'a.glb', path: 'tripo-out/a.glb', x: 0, y: 0, w: 380, h: 320, rot: 0, locked: false, hidden: false },
+      { id: 'i1', address: 'dsh-resource://file/session/session-1/shots/chat-shot.png', name: 'chat-shot.png', path: 'shots/chat-shot.png', x: 500, y: 0, w: 280, h: 200, rot: 0, locked: false, hidden: false },
+    ],
+  }
+  await render(React.createElement(boardBody, boardProps))
+  await tick()
+  check('3D 节点渲染成 .icv-3d 容器（不是 <img>）', $('.icv-node[data-kind="model"] .icv-3d') !== null)
+  check('3D 节点里有一块 canvas', $('.icv-3d canvas') !== null && $('.icv-3d canvas')?.tagName === 'CANVAS')
+  check('3D 节点的 label 不误报（读取失败）', !($('.icv-node[data-kind="model"] .icv-node-label')?.textContent ?? '').includes('读取失败'))
+  check('3D 节点没被当成图片去读字节（assets 里没有它的 key）',
+    $('.icv-node[data-kind="model"] img') === null)
+  check('图片节点照旧是 <img>（回归）', $('.icv-node[data-kind="image"] img') !== null)
+  // 未选中时 3D 视口不吃指针事件，画布的拖动/拉框才能穿过它
+  const modelBox = $('.icv-3d')
+  check('未选中时 3D 视口 pointer-events 为 none', modelBox !== null && (modelBox.style.pointerEvents ?? '') === 'none', modelBox?.style.pointerEvents ?? '(无)')
+  // 点一下节点 → 选中 → 变成可交互
+  fire($('.icv-node[data-kind="model"]'), 'pointerdown', { clientX: 10, clientY: 10, button: 0, buttons: 1, pointerId: 1 })
+  fire($('.icv-node[data-kind="model"]'), 'pointerup', { clientX: 10, clientY: 10, button: 0, pointerId: 1 })
+  await tick()
+  check('选中 3D 节点后视口变成 auto（可以拖动旋转模型）',
+    ($('.icv-3d')?.style.pointerEvents ?? '') === 'auto', $('.icv-3d')?.style.pointerEvents ?? '(无)')
+
+  // 2026-10-28 用户两轮反馈后的定稿：**只要鼠标在 3D 视口上，右键一律不弹画布菜单**
+  // （拖动 = 平移视角，单击 = 什么都不弹；节点操作走选中后的工具条 / Delete）。
+  const box3d = $('.icv-3d')
+  fire(box3d, 'pointerdown', { button: 2, buttons: 2, clientX: 120, clientY: 120, pointerId: 2 })
+  fire(box3d, 'pointermove', { button: 2, buttons: 2, clientX: 160, clientY: 120, pointerId: 2 })
+  fire(box3d, 'pointerup', { button: 2, clientX: 160, clientY: 120, pointerId: 2 })
+  fire(box3d, 'contextmenu', { clientX: 160, clientY: 120, button: 2 })
+  await tick()
+  check('3D 上右键拖动后不弹画布菜单（拖的是视角）', $('.icv-ctx') === null, $('.icv-ctx') === null ? '没弹' : '弹了')
+
+  fire(box3d, 'pointerdown', { button: 2, buttons: 2, clientX: 200, clientY: 200, pointerId: 3 })
+  fire(box3d, 'pointerup', { button: 2, clientX: 200, clientY: 200, pointerId: 3 })
+  fire(box3d, 'contextmenu', { clientX: 200, clientY: 200, button: 2 })
+  await tick()
+  check('3D 上右键单击也不弹菜单（定稿口径）', $('.icv-ctx') === null, $('.icv-ctx') === null ? '没弹' : '弹了')
+
+  // 回归：图片节点的右键菜单不能被误伤
+  fire($('.icv-node[data-kind="image"]'), 'contextmenu', { clientX: 520, clientY: 60, button: 2 })
+  await tick()
+  check('图片节点右键仍然弹菜单（没被 3D 的拦截误伤）', $('.icv-ctx') !== null, $('.icv-ctx') === null ? '没弹' : '弹了')
 }
 
 console.log('')

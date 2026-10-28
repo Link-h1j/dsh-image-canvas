@@ -1,8 +1,8 @@
 {
   "name": "dsh-image-canvas",
-  "version": "0.4.0",
+  "version": "0.6.0",
   "private": true,
-  "description": "DSH 桌面版右侧栏的无限画布：打开任何格式的图片都会落到同一张可平移缩放的画布上，支持拖动/缩放/旋转/锁定/撤销、框选与涂抹批注、一键把批注变成给 Agent 的提示词、导出 PNG，并可用本机 ComfyUI 直接改图/出图。所有能力本地完成，不调用任何外部 AI 服务。",
+  "description": "DSH 桌面版右侧栏的无限画布：打开任何格式的图片都会落到同一张可平移缩放的画布上，支持拖动/缩放/旋转/锁定/撤销、框选与涂抹批注、一键把批注变成给 Agent 的提示词、导出 PNG，并可用本机 ComfyUI 直接改图/出图；0.6.0 起还能在画布上直接查看 .glb/.gltf/.fbx/.obj/.stl/.ply 3D 模型（three.js 本地渲染，可旋转/缩放/平移）。所有能力本地完成，不调用任何外部 AI 服务。",
   "type": "module",
   "author": "Link-h1j",
   "license": "MIT",
@@ -28,6 +28,7 @@
     "lib/index.js",
     "lib/client.js",
     "lib/client.body.js",
+    "vendor",
     "cordis.patch.yml",
     "README.md",
     "LICENSE",
@@ -37,7 +38,11 @@
   "scripts": {
     "build": "node tools/build-client.mjs",
     "check": "node tools/build-client.mjs --check",
-    "selftest": "node tools/selftest.mjs"
+    "selftest": "node tools/selftest.mjs",
+    "selftest:helpers": "node tools/selftest-helpers.mjs",
+    "selftest:host": "node tools/selftest-host.mjs",
+    "verify:vendor": "node tools/verify-vendor-tree.mjs",
+    "verify": "npm run check && npm run verify:vendor && npm run selftest:helpers && npm run selftest:host && npm run selftest"
   },
   "keywords": [
     "deepseek-harness",
@@ -49,13 +54,21 @@
     "image-canvas",
     "annotation",
     "image",
+    "3d",
+    "glb",
+    "gltf",
+    "threejs",
     "comfyui",
     "无限画布",
-    "图片"
+    "图片",
+    "3D 预览"
   ],
   "license": "MIT",
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "sharp": "^0.35.5"
   },
   "dsh": {
     "manifestVersion": 1,

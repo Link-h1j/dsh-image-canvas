@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>dsh-image-canvas · viewer 冒烟测试</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #wrap { position: fixed; inset: 0; }
+  canvas#c { display: block; width: 100%; height: 100%; }
+  #hud {
+    position: fixed; left: 8px; top: 8px; z-index: 9;
+    font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
+    color: #7cf58d; background: rgba(0,0,0,.62);
+    padding: 6px 9px; border-radius: 5px; white-space: pre; max-width: 70vw;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c"></canvas></div>
+<div id="hud">booting…</div>
+
+<script type="module">
+import { createViewer } from '/viewer.js';
+import * as THREE from '/three.module.js';
+
+const q = new URLSearchParams(location.search);
+const model = q.get('model') || 'whale';
+const theme = q.get('theme') || 'dark';
+
+const MODELS = {
+  whale:  { url: '/whale.glb',  ext: 'glb', name: 'whale_maid_joined.glb' },
+  knight: { url: '/knight.fbx', ext: 'fbx', name: 'knight_lowpoly.fbx' },
+};
+const FILE = MODELS[model] || MODELS.whale;
+
+const hud = document.getElementById('hud');
+const setHud = (t) => { hud.textContent = t; };
+
+window.__TEST_STATE__ = { status: 'booting', model, theme };
+window.__LOGS__ = [];
+
+try {
+  const canvas = document.getElementById('c');
+  const viewer = await createViewer(canvas, {
+    dark: theme !== 'light',
+    onInfo: (i) => { window.__LOGS__.push('onInfo ' + JSON.stringify(i)); },
+    onError: (e) => { window.__LOGS__.push('onError ' + e.message); },
+  });
+  window.__viewer = viewer;
+  window.__TEST_STATE__ = { status: 'viewer-ready', model, ready: viewer.ready };
+  setHud('viewer ready  model=' + model);
+
+  const res = await fetch(FILE.url);
+  if (!res.ok) throw new Error('模型下载失败 HTTP ' + res.status);
+  const bytes = new Uint8Array(await res.arrayBuffer());
+
+  const t0 = performance.now();
+  const info = await viewer.load({ bytes, name: FILE.name, ext: FILE.ext });
+  const wallMs = Math.round(performance.now() - t0);
+
+  window.__TEST_INFO__ = info;
+  window.__TEST_STATE__ = { status: 'loaded', model, info, wallMs, ready: viewer.ready };
+  setHud('loaded in ' + wallMs + 'ms\n' + JSON.stringify(info, null, 1));
+
+  // 让阻尼/rAF 收敛，再暴露像素采样函数（供 CDP 调用）
+  await new Promise((r) => setTimeout(r, 250));
+
+  /**
+   * 在同一个 JS 任务里 render + readPixels，绕过 preserveDrawingBuffer:false
+   * 带来的"读时已清空"问题。返回亮度/覆盖率统计。
+   */
+  window.__samplePixels = function () {
+    const v = window.__viewer;
+    v.render();
+    const gl = v.renderer.getContext();
+    const w = gl.drawingBufferWidth;
+    const h = gl.drawingBufferHeight;
+    const px = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+
+    const bg = (v.scene.background && v.scene.background.isColor) ? v.scene.background.getHex() : null;
+    const bR = bg != null ? (bg >> 16) & 255 : null;
+    const bG = bg != null ? (bg >> 8) & 255 : null;
+    const bB = bg != null ? bg & 255 : null;
+
+    let n = 0, sum = 0, dark = 0, bright = 0, nonBg = 0;
+    let minX = 1e9, minY = 1e9, maxX = -1, maxY = -1;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        const r = px[i], g = px[i + 1], b = px[i + 2];
+        const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        n++; sum += l;
+        if (l < 6) dark++;
+        if (l > 248) bright++;
+        const isBg = bR != null &&
+          Math.abs(r - bR) <= 6 && Math.abs(g - bG) <= 6 && Math.abs(b - bB) <= 6;
+        if (!isBg) {
+          nonBg++;
+          if (x < minX) minX = x; if (x > maxX) maxX = x;
+          if (y < minY) minY = y; if (y > maxY) maxY = y;
+        }
+      }
+    }
+    // readPixels 原点在左下，翻成“从上往下”的屏幕坐标便于人工核对
+    return {
+      w, h,
+      meanLum: +(sum / n).toFixed(2),
+      darkPct: +((dark / n) * 100).toFixed(2),
+      brightPct: +((bright / n) * 100).toFixed(2),
+      nonBgPct: +((nonBg / n) * 100).toFixed(2),
+      subjectBox: nonBg > 0
+        ? { x: minX, yFromTop: h - 1 - maxY, w: maxX - minX + 1, h: maxY - minY + 1 }
+        : null,
+    };
+  };
+
+  // 相机/包围盒的逻辑层校验（不依赖像素）
+  window.__probe = function () {
+    const v = window.__viewer;
+    const model = v.scene.children.find((o) => o.name === 'dsh-canvas-model');
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3());
+    return {
+      ready: v.ready,
+      info: v.info,
+      worldBox: {
+        min: box.min.toArray().map((x) => +x.toFixed(4)),
+        max: box.max.toArray().map((x) => +x.toFixed(4)),
+        size: size.toArray().map((x) => +x.toFixed(4)),
+      },
+      feetOnGround: +Math.abs(box.min.y).toFixed(6) < 0.01,
+      centeredXZ: Math.abs(box.min.x + box.max.x) < 0.02 && Math.abs(box.min.z + box.max.z) < 0.02,
+      camPos: v.camera.position.toArray().map((x) => +x.toFixed(3)),
+      target: v.controls.target.toArray().map((x) => +x.toFixed(3)),
+      near: v.camera.near, far: v.camera.far, fov: v.camera.fov,
+      aspect: +v.camera.aspect.toFixed(3),
+      pxRatio: v.renderer.getPixelRatio(),
+      bufferSize: [v.renderer.domElement.width, v.renderer.domElement.height],
+      cssSize: [v.renderer.domElement.clientWidth, v.renderer.domElement.clientHeight],
+      env: !!v.scene.environment,
+      envIntensity: v.scene.environmentIntensity,
+      grid: !!v.scene.getObjectByName('dsh-canvas-grid'),
+      exposure: v.renderer.toneMappingExposure,
+      triCheck: v.info ? v.info.triangles : null,
+    };
+  };
+
+  window.__TEST_STATE__ = { status: 'ready-for-shot', model, info, wallMs, ready: viewer.ready };
+} catch (e) {
+  window.__TEST_STATE__ = { status: 'error', model, error: String((e && e.message) || e), stack: String(e && e.stack || '') };
+  setHud('ERROR: ' + ((e && e.message) || e));
+  console.error('TEST_FAILED', e);
+}
+</script>
+</body>
+</html>

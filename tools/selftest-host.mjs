@@ -45,9 +45,11 @@ const EXPECTED_ROUTES = [
   '/plugins/dsh-image-canvas/comfy/status',
   '/plugins/dsh-image-canvas/comfy/run',
   '/plugins/dsh-image-canvas/comfy/out',
+  '/plugins/dsh-image-canvas/convert',
 ]
-check('注册的路由集合与预期完全一致', routes.length === EXPECTED_ROUTES.length
-  && EXPECTED_ROUTES.every((expected) => routes.some((route) => route.kind === 'exact' && route.path === expected)),
+check('注册的路由集合与预期完全一致', routes.length === EXPECTED_ROUTES.length + 1
+  && EXPECTED_ROUTES.every((expected) => routes.some((route) => route.kind === 'exact' && route.path === expected))
+  && routes.some((route) => route.kind === 'prefix' && route.path === '/plugins/dsh-image-canvas/vendor/'),
   '实际: ' + routes.map((r) => r.kind + ' ' + r.path).join(', '))
 check('探活路由存在', routes.some((r) => r.kind === 'exact' && r.path === '/plugins/dsh-image-canvas/probe'))
 check('状态路由存在', routes.some((r) => r.kind === 'exact' && r.path === '/plugins/dsh-image-canvas/state'))
@@ -105,6 +107,65 @@ badReq.emit('data', Buffer.from('{ not json'))
 badReq.emit('end')
 await new Promise((r) => setTimeout(r, 60))
 check('坏 JSON 返回 400 而不是崩溃', res6.statusCode === 400, res6.body)
+
+// ── /convert 图片转码路由（2026-10-21 新增：tiff → png） ──────────────────
+const convert = routes.find((r) => r.path.endsWith('/convert')).handler
+{
+  const res = fakeRes()
+  convert({ method: 'GET', url: '/plugins/dsh-image-canvas/convert' }, res)
+  check('转码路由只收 POST（GET 405）', res.statusCode === 405 && JSON.parse(res.body).ok === false, res.body)
+}
+{
+  const req = new EventEmitter()
+  req.method = 'POST'
+  req.url = '/plugins/dsh-image-canvas/convert?name=empty.tif'
+  req.destroy = () => {}
+  const res = fakeRes()
+  convert(req, res)
+  req.emit('end')
+  await new Promise((r) => setTimeout(r, 30))
+  check('转码空 body 返回 400', res.statusCode === 400 && JSON.parse(res.body).ok === false, res.body)
+}
+{
+  const req = new EventEmitter()
+  req.method = 'POST'
+  req.url = '/plugins/dsh-image-canvas/convert?name=garbage.tif'
+  req.destroy = () => {}
+  const res = fakeRes()
+  convert(req, res)
+  req.emit('data', Buffer.from('this is definitely not an image'))
+  req.emit('end')
+  await new Promise((r) => setTimeout(r, 400))
+  const body = JSON.parse(res.body)
+  // 装了 sharp → 415（解不了这个格式）；没装 → 501（可选依赖缺失）。两者都必须是 JSON + 人话
+  check('转码垃圾字节给出 415/501 与可读错误', (res.statusCode === 415 || res.statusCode === 501) && body.ok === false && typeof body.error === 'string' && body.error !== '', res.statusCode + ' ' + res.body)
+}
+
+// ── /vendor 3D 运行时静态资源（2026-10-28 新增：three.js + loaders） ─────────
+const vendor = routes.find((r) => r.kind === 'prefix' && r.path === '/plugins/dsh-image-canvas/vendor/').handler
+{
+  const res = fakeRes()
+  vendor({ method: 'GET', url: '/plugins/dsh-image-canvas/vendor/viewer.js' }, res)
+  check('vendor 发得出 viewer.js（text/javascript）',
+    res.statusCode === 200 && /javascript/.test(String(res.headers['content-type'])) && res.body.length > 1000,
+    res.statusCode + ' ' + String(res.headers['content-type'])),
+  check('vendor 响应带强缓存头', /max-age=\d+/.test(String(res.headers['cache-control'])), String(res.headers['cache-control']))
+}
+{
+  const res = fakeRes()
+  vendor({ method: 'GET', url: '/plugins/dsh-image-canvas/vendor/../lib/index.js' }, res)
+  check('vendor 拒绝目录穿越（..），不吐源码', res.statusCode === 400 || res.statusCode === 403, res.statusCode + ' ' + res.body)
+}
+{
+  const res = fakeRes()
+  vendor({ method: 'GET', url: '/plugins/dsh-image-canvas/vendor/evil.exe' }, res)
+  check('vendor 只发白名单扩展名（.exe 403）', res.statusCode === 403, res.statusCode + ' ' + res.body)
+}
+{
+  const res = fakeRes()
+  vendor({ method: 'GET', url: '/plugins/dsh-image-canvas/vendor/not-there.js' }, res)
+  check('vendor 缺文件给 404 而不是崩', res.statusCode === 404 && JSON.parse(res.body).ok === false, res.body)
+}
 
 fs.rmSync(TEMP_HOME, { recursive: true, force: true })
 

@@ -1,0 +1,100 @@
+{
+  "model": "whale",
+  "theme": "light",
+  "state": {
+    "status": "ready-for-shot",
+    "model": "whale",
+    "info": {
+      "meshes": 15,
+      "triangles": 32545,
+      "bbox": [
+        0.7072,
+        1.6489,
+        0.8012
+      ],
+      "loadMs": 9,
+      "name": "whale_maid_joined.glb",
+      "ext": "glb"
+    },
+    "wallMs": 360,
+    "ready": true
+  },
+  "probe": {
+    "ready": true,
+    "info": {
+      "meshes": 15,
+      "triangles": 32545,
+      "bbox": [
+        0.7072,
+        1.6489,
+        0.8012
+      ],
+      "loadMs": 9,
+      "name": "whale_maid_joined.glb",
+      "ext": "glb"
+    },
+    "worldBox": {
+      "min": [
+        -0.3536,
+        0,
+        -0.4006
+      ],
+      "max": [
+        0.3536,
+        1.6489,
+        0.4006
+      ],
+      "size": [
+        0.7072,
+        1.6489,
+        0.8012
+      ]
+    },
+    "feetOnGround": true,
+    "centeredXZ": true,
+    "camPos": [
+      1.675,
+      1.802,
+      2.327
+    ],
+    "target": [
+      0,
+      0.824,
+      0
+    ],
+    "near": 0.0015147032363495465,
+    "far": 121.17625890796373,
+    "fov": 45,
+    "aspect": 1.651,
+    "pxRatio": 1,
+    "bufferSize": [
+      1258,
+      762
+    ],
+    "cssSize": [
+      1258,
+      762
+    ],
+    "env": true,
+    "envIntensity": 0.95,
+    "grid": true,
+    "exposure": 1,
+    "triCheck": 32545
+  },
+  "pixels": {
+    "w": 1258,
+    "h": 762,
+    "meanLum": 236.71,
+    "darkPct": 0,
+    "brightPct": 0,
+    "nonBgPct": 7.68,
+    "subjectBox": {
+      "x": 0,
+      "yFromTop": 124,
+      "w": 1258,
+      "h": 638
+    }
+  },
+  "console": [],
+  "shot": "C:\\Users\\Administrator\\Documents\\deepseek-harness\\默认工作区\\dsh-image-canvas\\vendor\\_verify\\shot-glb-whale-light.png"
+}

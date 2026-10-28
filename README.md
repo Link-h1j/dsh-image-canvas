@@ -31,7 +31,7 @@
 
 | 能力 | 说明 |
 |---|---|
-| **图片自动汇入** | 在对话/文件树/交付物里打开 `png/jpg/jpeg/gif/webp/bmp/ico/svg/avif/apng`，都会落到**同一张画布**上；同一张图重复打开不会重复添加 |
+| **图片自动汇入** | 在对话/文件树/交付物里打开 `png/jpg/jpeg/jfif/jpe/gif/webp/bmp/ico/svg/avif/apng`（浏览器直接解码）或 `tif/tiff`（宿主 sharp 转码）都会落到**同一张画布**上；同一张图重复打开不会重复添加 |
 | **无限画布** | 滚轮以指针为中心缩放、手/中键拖动平移、适应视图、真实百分比显示 |
 | **节点操作** | 单选时四周 **8 个缩放手柄**（4 角 + 4 边中点：角上等比、按住 Shift 放开比例、边上只改一个方向）+ 右上角外侧的**旋转点**（圆形箭头图标，Shift 吸附 15°）；拖动、锁定、删除、`F` 聚焦 |
 | **撤销/重做** | Ctrl+Z / Ctrl+Y，最多 60 步 |
@@ -41,6 +41,44 @@
 | **导出** | 把可见图片合成为一张 PNG 下载（含旋转，本地合成） |
 | **持久化** | 按会话保存：宿主路由 `<DSH_HOME>/storages/dsh-image-canvas/<会话>.json`，宿主不可用时回落 localStorage；AI 产出图片落在同目录 `out/<会话>/` 并由插件路由取回 |
 | **面板外右键** | 在画布面板以外（聊天/文件树）的内容图上右键：**放入无限画布** / **复制图片地址** |
+| **3D 模型预览**（0.6.0） | 在画布上直接打开 `glb/gltf/fbx/obj/stl/ply`：节点里是一块 three.js 视口，自动居中贴地；**选中后可左键旋转 / 右键平移 / 滚轮缩放**。入口：对话里点开 3D 文件、右下角立方体按钮（扫描目录 / 粘路径）、「⋯ → 打开 3D 模型…」 |
+
+## 3D 模型预览（2026-10-28 新增）
+
+画布节点不再只能是图片：3D 文件会渲染成一块**真的 WebGL 视口**（three.js r169，本地渲染，不联网）。
+
+| 项 | 说明 |
+|---|---|
+| 认的格式 | `glb` `gltf` `fbx` `obj` `stl` `ply` |
+| 交互 | 选中节点后：左键拖动旋转、右键拖动平移、滚轮缩放；未选中时节点不吃指针事件（画布拖动/拉框照常穿过） |
+| 自动适配 | 按包围盒居中、脚底落到地面网格、相机按最大边长选距离；节点缩放/画布缩放都会按比例提升渲染像素比 |
+| 主题 | 深色（近黑底 + 暗网格）/ 浅色（浅灰底 + 浅网格）自动跟随画布主题 |
+| 入口 | ① 对话里点开 3D 文件 → 自动汇入画布；② 右下角**立方体按钮** → 扫描目录（可填绝对路径）或粘路径；③ `⋯ → 打开 3D 模型…` |
+| 上限 | 单模型 96 MiB；`.blend` 不收（Blender 私有格式，先导出 glb）；`.gltf` 的外部 `.bin`/贴图拉不到时请用 `.glb`；每个节点一个 WebGL 上下文，节点隐藏即释放 |
+| 自动打开 | 画布文档里出现 3D 节点时，**右侧栏会自己弹出一次**（每个会话一次）—— 否则用户根本不知道模型已经落到画布上了 |
+
+运行时放在插件自带的 `vendor/`（three + 各格式 loader，1.9 MB），由宿主 prefix 路由
+`/plugins/dsh-image-canvas/vendor/` 发出；宿主还没重启（路由 404）时，客户端会退回
+「从工作区读 vendor 文本 → 拼成 blob 模块树再 `import()`」，所以改完客户端即可用、不必等重启。
+升级 three 的步骤见 `vendor/README.md`。
+
+## 图片格式支持（2026-10-21 更新）
+
+按**文件头魔术字节**判断真实格式，不依赖扩展名（改过后缀的图也能认）：
+
+| 处理方式 | 格式 | 说明 |
+|---|---|---|
+| 浏览器直接解码 | `png` `apng` `jpg` `jpeg` `jfif` `jpe` `gif` `webp` `bmp` `ico` `svg` `avif` | Chromium 原生支持，画布直接用 Blob 显示 |
+| 宿主转 PNG（sharp / libvips） | `tif` `tiff` | 常见压缩都实测过：未压缩 / LZW / Deflate / PackBits / JPEG-in-TIFF / CMYK / 带 alpha / 多页（取第一页） |
+| 暂不支持 | `heic` `heif`（HEVC）、`psd` `exr` `hdr` `dds` `tga` `jxl` | 见「已知限制」 |
+
+另外两条 2026-10-21 修的加载问题：
+
+- **大图**：官方 `readBytes` 整文件上限 32 MiB，超过会报 `too-large`。画布现在自动退化成 **1 MiB 分块读**再拼回来，
+  单张图上限放宽到 256 MiB（再大直接给错误提示，不硬撑）。
+- **路径被 Markdown 吃坏**：聊天里写 `![x](B:\ComfyUI\_cloud_test\x.png)` 时，Markdown 会把 `\_` 当转义，
+  分隔符丢失 → `B:/ComfyUI_cloud_test/x.png`（文件明明在却 not-found）。画布现在读失败时会在 ASCII 标点前
+  逐个补回 `/` 探测，命中就**自动修好并把文档里的坏地址改对**（提示「图片路径已自动修复」）。
 
 ## 安装
 
@@ -52,18 +90,25 @@
    git clone https://github.com/Link-h1j/dsh-image-canvas.git D:\plugins\dsh-image-canvas
    ```
 
-2. DSH 左侧栏 **插件 → 添加插件**，填**该目录的绝对路径**（例如 `D:\plugins\dsh-image-canvas`），
+2. **可选：装转码依赖（为了打开 tif/tiff）**
+   ```powershell
+   cd D:\plugins\dsh-image-canvas
+   npm install            # 会装 sharp（约 30 MB，含 libvips 原生模块）
+   ```
+   不装也能用，只是 TIFF 打开时会明确提示「图片转码器不可用（没装 sharp…）」；浏览器原生格式不受影响。
+
+3. DSH 左侧栏 **插件 → 添加插件**，填**该目录的绝对路径**（例如 `D:\plugins\dsh-image-canvas`），
    按提示启用。插件管理器支持本地目录（bundle）安装；也可以让 DSH Agent 用插件管理器从目录安装。
 
-3. **若右侧栏面板迟迟不出现，请完整重启一次桌面版**——宿主半边（探活路由）要重启才会挂载；
-   浏览器半边（画布 UI）会自动热更。
+4. **若右侧栏面板迟迟不出现、或新格式（TIFF）报「转码服务还没启动」，请完整重启一次桌面版**——
+   宿主半边（探活 + 转码路由）要重启才会挂载；浏览器半边（画布 UI）会自动热更。
 
 ### 装完怎么验
 
 ```powershell
 # 1) 宿主路由是否挂上（端口换成你本机 DSH Web GUI 的实际端口）
 Invoke-RestMethod http://127.0.0.1:<端口>/plugins/dsh-image-canvas/probe
-# 期望：{"ok":true,"plugin":"dsh-image-canvas","version":"0.4.0","store":"...storages\dsh-image-canvas"}
+# 期望：{"ok":true,"plugin":"dsh-image-canvas","version":"0.6.0","store":"...storages\dsh-image-canvas","vendor":"...\vendor"}
 
 # 2) 插件是否进了 profile
 (Get-Content "$env:USERPROFILE\.dsh\profiles\desktop\package.json" -Raw | ConvertFrom-Json).dsh.profile.bundles -contains 'dsh-image-canvas'
@@ -178,21 +223,28 @@ python main.py --port 8189
 - **改图依赖本机 ComfyUI**：没启动时画布照常可用，三个动作按钮置灰。
 - 一次只跑一单（浮层有忙碌态）；换 checkpoint 需要重新加载模型，第一张会慢十几秒。
 - **只认 session scope 的工作区文件**（`dsh-resource://file/session/...`）；`absolute` scope 没有会话，不会被接管。
-- 单文件读取上限取决于宿主（官方默认 32 MiB，超出会报错而不是截断）。
+- **大图**：整文件读取走 1 MiB 分块（宿主 32 MiB 上限已被绕开），单张图封顶 256 MiB；超了给明确错误而不是卡死。
+- **HEIC/HEIF 解不了**：DSH 自带的 libvips 没编 HEVC 解码器（2026-10-21 实测报
+  `Support for this compression format has not been built in: HEVC`），HEIC/HEIF 请先转成 PNG/JPG。
+  同理 `psd` `exr` `hdr` `dds` `tga` `jxl` 也不在支持列表里（sharp 的 libvips 没带这些 loader）。
 - 画布状态按会话隔离；换会话 = 换一张画布。
 - 目前没有版本树；但每次 AI 改图都会留一个新节点，等于一条简单的版本链。
 
 ## 开发
 
 ```powershell
-node tools/build-client.mjs        # 改完 lib/client.body.js 必须跑这个（带语法闸门）
+node tools/build-client.mjs         # 改完 lib/client.body.js 必须跑这个（带语法闸门）
 node tools/build-client.mjs --check # 只核对产物是否最新
-node tools/selftest.mjs            # 客户端半边：jsdom + 真 React 渲染，202 项断言
-node tools/selftest-host.mjs       # 宿主半边：路由 / 探活 / 原子写 / 容错，15 项断言
-node tools/selftest-comfy.mjs      # 真实 ComfyUI 端到端：文生图 → 图生图 → 局部重绘（需 ComfyUI 在跑）
-node tools/probe-comfy.mjs         # 只读探测：ComfyUI 版本/设备/节点/可用模型
-node tools/preview.mjs             # 视觉预览：jsdom 渲染 → 静态 HTML → 本机 Chromium 截图（12 个状态）
-node tools/restore-body.mjs        # 意外改坏 client.body.js 时，从 lib/client.js 反解恢复
+node tools/selftest-helpers.mjs     # 纯函数：magic bytes / 路径自愈 / 分块拼接，47 项，~0.3 s
+node tools/selftest.mjs             # 客户端半边：jsdom + 真 React 渲染，213 项断言（含 3D 节点接线）
+node tools/selftest-host.mjs        # 宿主半边：路由 / 探活 / 原子写 / 转码 / vendor 静态资源，23 项断言
+node tools/verify-vendor-tree.mjs   # 3D 运行时：vendor 依赖闭包 + blob 模块树可拼装 + 19 个文件都能 import
+node tools/selftest-comfy.mjs       # 真实 ComfyUI 端到端：文生图 → 图生图 → 局部重绘（需 ComfyUI 在跑）
+node tools/probe-comfy.mjs          # 只读探测：ComfyUI 版本/设备/节点/可用模型
+node tools/preview.mjs              # 视觉预览：jsdom 渲染 → 静态 HTML → 本机 Chromium 截图（12 个状态）
+node tools/restore-body.mjs         # 意外改坏 client.body.js 时，从 lib/client.js 反解恢复
+
+npm run verify                      # = check + verify:vendor + selftest:helpers + selftest:host + selftest（提交前跑这个）
 ```
 
 - `tools/preview.mjs` / `tools/selftest.mjs` 需要 jsdom 与 react/react-dom，可用
